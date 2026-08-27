@@ -13,7 +13,9 @@ Open `http://localhost:3000`. On the same Wi-Fi, share `http://YOUR-COMPUTER-IP:
 
 ## Controls
 
-Arrow keys move/soft-drop, `Up` or `X` rotates, and `Space` hard-drops. Use **Start / Restart** to start a new game.
+Arrow keys move and soft-drop, `X` rotates clockwise, and `Z` rotates counterclockwise. Use **Start / Restart** to start a new game. Controls can be rebound in Settings.
+
+The engine follows NTSC NES timing: 60.0988 Hz simulation, 16-frame DAS with six-frame repeats, the NES gravity curve, Nintendo rotation without wall kicks, immediate locking on a blocked downward step, height-dependent entry delay, line-clear delay, and classic scoring. NES Tetris has no hold or hard drop.
 
 ## Put it online
 

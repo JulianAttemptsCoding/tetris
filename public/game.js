@@ -1,58 +1,52 @@
-const COLS=10, ROWS=20, S=30, colors=['','#30c8ff','#3f51ff','#ff9d2e','#ffe23d','#51d66d','#bd5cff','#ff4e66'];
-const shapes=[[[1,1,1,1]],[[2,0,0],[2,2,2]],[[0,0,3],[3,3,3]],[[4,4],[4,4]],[[0,5,5],[5,5,0]],[[0,6,0],[6,6,6]],[[7,7,0],[0,7,7]]];
-const boardEl=document.querySelector('#board'),ctx=boardEl.getContext('2d'),nextCtx=document.querySelector('#next').getContext('2d');ctx.scale(S,S);nextCtx.scale(20,20);
-let board, piece, next, score, lines, running=false, paused=false, gameMessage='PRESS START', last=0, drop=0, socket, room='', peerRoom, sendPeerState, playerName='', lastSync=0;
+const COLS=10,ROWS=20,CELL=30,FPS=60.0988,FRAME_MS=1000/FPS;
+const COLORS=['','#30c8ff','#3f51ff','#ff9d2e','#ffe23d','#51d66d','#bd5cff','#ff4e66'];
+const GRAVITY=[48,43,38,33,28,23,18,13,8,6,5,5,5,4,4,4,3,3,3,2,2,2,2,2,2,2,2,2,2,1];
+const BASES=[[[0,0,0,0],[1,1,1,1],[0,0,0,0],[0,0,0,0]],[[2,0,0],[2,2,2],[0,0,0]],[[0,0,3],[3,3,3],[0,0,0]],[[4,4],[4,4]],[[0,5,5],[5,5,0],[0,0,0]],[[0,6,0],[6,6,6],[0,0,0]],[[7,7,0],[0,7,7],[0,0,0]]];
+const defaults={left:'ArrowLeft',right:'ArrowRight',down:'ArrowDown',rotateCW:'x',rotateCCW:'z'};
+const boardEl=document.querySelector('#board'),ctx=boardEl.getContext('2d'),nextCtx=document.querySelector('#next').getContext('2d');ctx.scale(CELL,CELL);nextCtx.scale(20,20);
+let board,piece,next,score,lines,level,running=false,paused=false,gameMessage='PRESS START';
+let previousType=-1,gravityFrames=0,softDropFrames=0,softDropPoints=0,placedCount=0,entryDelay=0,globalFrame=0;
+let lastTime=0,accumulator=0,socket,room='',peerRoom,sendPeerState,playerName='',lastSync=0;
+const held={left:false,right:false,down:false};let dasDirection=0,dasFrames=0;
 const peerPlayers=new Map();
-const defaults={left:'ArrowLeft',right:'ArrowRight',down:'ArrowDown',rotate:'ArrowUp',hardDrop:' '};
 function loadKeys(){try{return JSON.parse(localStorage.getItem('tetris-keys')||'{}');}catch{return {};}}
 let keys={...defaults,...loadKeys()};
-const keyLabel=(key)=>key===' ' ? 'Space' : key;
+const keyLabel=key=>key===' '?'Space':key;
 function paintBindings(){document.querySelectorAll('#bindings input').forEach(input=>input.value=keyLabel(keys[input.dataset.action]));}
 function saveKeys(){localStorage.setItem('tetris-keys',JSON.stringify(keys));paintBindings();}
 const empty=()=>Array.from({length:ROWS},()=>Array(COLS).fill(0));
-const newPiece=()=>({m:shapes[Math.floor(Math.random()*shapes.length)].map(r=>[...r]),x:3,y:0});
-function reset(){board=empty();piece=newPiece();next=newPiece();score=0;lines=0;running=true;paused=false;gameMessage='';last=performance.now();drop=0;ui();}
-function initialize(){board=empty();piece=newPiece();next=newPiece();score=0;lines=0;running=false;paused=false;gameMessage='PRESS START';ui();}
-function collide(p,dx=0,dy=0,m=p.m){return m.some((r,y)=>r.some((v,x)=>v&&(board[y+p.y+dy]?.[x+p.x+dx]??1)));}
-function drawMatrix(m,off,c=ctx){m.forEach((r,y)=>r.forEach((v,x)=>{if(v){c.fillStyle=colors[v];c.fillRect(x+off.x,y+off.y,1,1);c.fillStyle='rgba(255,255,255,.25)';c.fillRect(x+off.x,y+off.y,.13,1);}}));}
-function draw(){ctx.fillStyle='#020817';ctx.fillRect(0,0,COLS,ROWS);drawMatrix(board,{x:0,y:0});if(running)drawMatrix(piece.m,{x:piece.x,y:piece.y});nextCtx.fillStyle='#020817';nextCtx.fillRect(0,0,6,5);drawMatrix(next.m,{x:1,y:1},nextCtx);}
-function merge(){piece.m.forEach((r,y)=>r.forEach((v,x)=>{if(v)board[y+piece.y][x+piece.x]=v;}));let n=0;board=board.filter(r=>{if(r.every(Boolean)){n++;return false}return true});while(board.length<ROWS)board.unshift(Array(COLS).fill(0));if(n){lines+=n;score+=[0,100,300,500,800][n];}piece=next;piece.x=3;piece.y=0;next=newPiece();if(collide(piece)){running=false;gameMessage='GAME OVER';}ui();}
-function down(){if(!running||paused)return;if(!collide(piece,0,1))piece.y++;else merge();drop=0;}
-function rotate(){const m=piece.m[0].map((_,i)=>piece.m.map(r=>r[i]).reverse());if(!collide(piece,0,0,m))piece.m=m;}
-function ui(){document.querySelector('#score').textContent=String(score).padStart(6,'0');document.querySelector('#lines').textContent=String(lines).padStart(2,'0');const pauseButton=document.querySelector('#pause');pauseButton.textContent=paused?'RESUME':'PAUSE';pauseButton.disabled=!running;pauseButton.setAttribute('aria-pressed',String(paused));const startButton=document.querySelector('#start');startButton.textContent=running?'RESTART':gameMessage==='GAME OVER'?'PLAY AGAIN':'START';const status=document.querySelector('#gameStatus');status.textContent=paused?'PAUSED':gameMessage;status.classList.toggle('hidden',running&&!paused);}
-function tick(t){const delta=t-last;last=t;if(running&&!paused){drop+=delta;if(drop>Math.max(120,800-lines*4))down();}draw();if(t-lastSync>100){if(socket&&room)socket.emit('state',{board,score});if(sendPeerState)sendPeerState({name:playerName,board,score});lastSync=t;}requestAnimationFrame(tick)}
-document.addEventListener('keydown',e=>{const action=Object.entries(keys).find(([,key])=>key===e.key)?.[0];if(action)e.preventDefault();if(!running||!action)return;if(action==='left'&&!collide(piece,-1))piece.x--;if(action==='right'&&!collide(piece,1))piece.x++;if(action==='down')down();if(action==='rotate')rotate();if(action==='hardDrop'){while(!collide(piece,0,1))piece.y++;down();}});
-document.querySelector('#start').addEventListener('click',reset);document.querySelector('#pause').addEventListener('click',()=>{if(running){paused=!paused;ui();}});
+const clone=matrix=>matrix.map(row=>[...row]);
+function randomType(){let type=Math.floor(Math.random()*7);if(type===previousType)type=Math.floor(Math.random()*7);previousType=type;return type;}
+function newPiece(){const type=randomType();return{type,m:clone(BASES[type]),x:3,y:0,rotation:0};}
+function resetInputs(){held.left=held.right=held.down=false;dasDirection=dasFrames=softDropFrames=softDropPoints=0;}
+function reset(){board=empty();previousType=-1;piece=newPiece();next=newPiece();score=lines=level=placedCount=gravityFrames=entryDelay=globalFrame=0;running=true;paused=false;gameMessage='';lastTime=performance.now();accumulator=0;resetInputs();ui();}
+function initialize(){board=empty();piece=newPiece();next=newPiece();score=lines=level=placedCount=gravityFrames=entryDelay=globalFrame=0;running=false;paused=false;gameMessage='PRESS START';resetInputs();ui();}
+function collide(candidate,dx=0,dy=0,matrix=candidate.m){return matrix.some((row,y)=>row.some((value,x)=>{if(!value)return false;const bx=x+candidate.x+dx,by=y+candidate.y+dy;return bx<0||bx>=COLS||by>=ROWS||(by>=0&&Boolean(board[by][bx]));}));}
+function rotateMatrix(matrix,direction){const size=matrix.length;return Array.from({length:size},(_,y)=>Array.from({length:size},(_,x)=>direction>0?matrix[size-1-x][y]:matrix[x][size-1-y]));}
+function rotate(direction){if(!piece||piece.type===3)return false;let rotation,matrix;if([0,4,6].includes(piece.type)){rotation=piece.rotation===0?1:0;matrix=rotation?rotateMatrix(BASES[piece.type],1):clone(BASES[piece.type]);}else{rotation=(piece.rotation+direction+4)%4;matrix=rotateMatrix(piece.m,direction);}if(!collide(piece,0,0,matrix)){piece.m=matrix;piece.rotation=rotation;return true;}return false;}
+function shift(direction){if(piece&&!collide(piece,direction,0)){piece.x+=direction;return true;}return false;}
+function spawnNext(){piece=next;piece.x=3;piece.y=0;next=newPiece();gravityFrames=softDropFrames=softDropPoints=0;if(collide(piece)){running=false;gameMessage='GAME OVER';}ui();}
+function entryDelayFor(bottom,cleared,frame){const are=Math.min(18,10+2*Math.ceil(Math.max(0,18-bottom)/4));return are+(cleared?20-frame%4:0);}
+function lockPiece(){const bottom=piece.m.reduce((lowest,row,y)=>row.some(Boolean)?Math.max(lowest,piece.y+y):lowest,0);piece.m.forEach((row,y)=>row.forEach((value,x)=>{if(value&&piece.y+y>=0)board[piece.y+y][piece.x+x]=value;}));placedCount++;let cleared=0;board=board.filter(row=>{if(row.every(Boolean)){cleared++;return false;}return true;});while(board.length<ROWS)board.unshift(Array(COLS).fill(0));if(held.down)score=Math.min(999999,score+softDropPoints);if(cleared){lines+=cleared;level=Math.floor(lines/10);score=Math.min(999999,score+[0,40,100,300,1200][cleared]*(level+1));}entryDelay=entryDelayFor(bottom,cleared,globalFrame);piece=null;ui();}
+function stepDown(soft=false){if(!collide(piece,0,1)){piece.y++;if(soft)softDropPoints++;return true;}lockPiece();return false;}
+function gravityDelay(){return GRAVITY[Math.min(level,GRAVITY.length-1)];}
+function frameStep(){if(!running||paused)return;globalFrame++;const direction=held.left===held.right?0:held.left?-1:1;if(direction){if(direction!==dasDirection){dasDirection=direction;dasFrames=0;if(piece)shift(direction);}else{dasFrames++;if(piece&&dasFrames>=16&&(dasFrames-16)%6===0)shift(direction);}}else{dasDirection=dasFrames=0;}if(entryDelay){entryDelay--;if(!entryDelay)spawnNext();return;}if(held.down){softDropFrames++;if(softDropFrames>=2){softDropFrames=0;stepDown(true);gravityFrames=0;}}else{softDropFrames=softDropPoints=0;gravityFrames++;if(gravityFrames>=gravityDelay()){gravityFrames=0;stepDown(false);}}}
+function drawMatrix(matrix,offset,context=ctx){matrix.forEach((row,y)=>row.forEach((value,x)=>{if(value){context.fillStyle=COLORS[value];context.fillRect(x+offset.x,y+offset.y,1,1);context.fillStyle='rgba(255,255,255,.25)';context.fillRect(x+offset.x,y+offset.y,.13,1);}}));}
+function draw(){ctx.fillStyle='#020817';ctx.fillRect(0,0,COLS,ROWS);drawMatrix(board,{x:0,y:0});if(running&&piece)drawMatrix(piece.m,{x:piece.x,y:piece.y});nextCtx.fillStyle='#020817';nextCtx.fillRect(0,0,6,5);drawMatrix(next.m,{x:1,y:1},nextCtx);}
+function ui(){document.querySelector('#score').textContent=String(score).padStart(6,'0');document.querySelector('#lines').textContent=String(lines).padStart(3,'0');document.querySelector('#level').textContent=String(level).padStart(2,'0');const pauseButton=document.querySelector('#pause');pauseButton.textContent=paused?'RESUME':'PAUSE';pauseButton.disabled=!running;pauseButton.setAttribute('aria-pressed',String(paused));document.querySelector('#start').textContent=running?'RESTART':gameMessage==='GAME OVER'?'PLAY AGAIN':'START';const status=document.querySelector('#gameStatus');status.textContent=paused?'PAUSED':gameMessage;status.classList.toggle('hidden',running&&!paused);}
+function tick(time){if(!lastTime)lastTime=time;accumulator+=Math.min(time-lastTime,250);lastTime=time;while(accumulator>=FRAME_MS){frameStep();accumulator-=FRAME_MS;}draw();if(time-lastSync>100){if(socket&&room)socket.emit('state',{board,score});if(sendPeerState)sendPeerState({name:playerName,board,score});lastSync=time;}requestAnimationFrame(tick);}
+function actionForKey(key){return Object.entries(keys).find(([,bound])=>bound.toLowerCase()===key.toLowerCase())?.[0];}
+document.addEventListener('keydown',event=>{const action=actionForKey(event.key);if(!action)return;event.preventDefault();if(!running||paused||event.repeat)return;if(action==='left'||action==='right'||action==='down'){held[action]=true;if(action==='down'){softDropFrames=0;softDropPoints=0;}}else if(action==='rotateCW')rotate(1);else if(action==='rotateCCW')rotate(-1);});
+document.addEventListener('keyup',event=>{const action=actionForKey(event.key);if(action==='left'||action==='right'||action==='down'){held[action]=false;if(action==='down'){softDropFrames=softDropPoints=0;}}});
+window.addEventListener('blur',resetInputs);
+document.querySelector('#start').addEventListener('click',reset);document.querySelector('#pause').addEventListener('click',()=>{if(running){paused=!paused;resetInputs();ui();}});
 document.querySelector('#settings').onclick=()=>document.querySelector('#settingsPanel').classList.toggle('hidden');
-document.querySelectorAll('#bindings input').forEach(input=>input.addEventListener('keydown',e=>{e.preventDefault();e.stopPropagation();if(['Tab','Shift','Control','Alt','Meta'].includes(e.key))return;keys[input.dataset.action]=e.key;saveKeys();input.blur();}));
+document.querySelectorAll('#bindings input').forEach(input=>input.addEventListener('keydown',event=>{event.preventDefault();event.stopPropagation();if(['Tab','Shift','Control','Alt','Meta'].includes(event.key))return;keys[input.dataset.action]=event.key;saveKeys();input.blur();}));
 document.querySelector('#resetKeys').onclick=()=>{keys={...defaults};saveKeys();};paintBindings();
-async function connectMultiplayer(){
-  const status=document.querySelector('#roomStatus');
-  try{
-    if(typeof window.io!=='function'){const library=window.loadSocketLibrary?await window.loadSocketLibrary():await import('/socket.io/socket.io.esm.min.js');window.io=library.io;}
-  }catch{status.textContent='Multiplayer server unavailable — solo play still works.';return false;}
-  if(!socket){socket=window.io();socket.on('room',showPlayers);socket.on('connect_error',()=>status.textContent='Multiplayer server is offline — solo play still works.');}
-  return true;
-}
-async function connectPeerRoom(){
-  const status=document.querySelector('#roomStatus');
-  status.textContent=`Connecting to room ${room}…`;
-  try{
-    const library=window.loadPeerLibrary ? await window.loadPeerLibrary() : await import('https://esm.run/trystero@0.25.0');
-    if(peerRoom)peerRoom.leave();
-    peerPlayers.clear();
-    peerPlayers.set('you',{id:'you',name:playerName,board,score});
-    peerRoom=library.joinRoom({appId:'julianattemptscoding-tetris-online-v1'},room);
-    const stateAction=peerRoom.makeAction('board-state');
-    stateAction.onMessage=(data,{peerId})=>{if(data&&Array.isArray(data.board)){peerPlayers.set(peerId,{id:peerId,name:String(data.name||'Player').slice(0,16),board:data.board,score:Number(data.score)||0});showPlayers([...peerPlayers.values()]);}};
-    peerRoom.onPeerJoin=peerId=>stateAction.send({name:playerName,board,score},{target:peerId});
-    peerRoom.onPeerLeave=peerId=>{peerPlayers.delete(peerId);showPlayers([...peerPlayers.values()]);};
-    sendPeerState=data=>{peerPlayers.set('you',{id:'you',...data});showPlayers([...peerPlayers.values()]);stateAction.send(data);};
-    showPlayers([...peerPlayers.values()]);
-    status.textContent=`Room ${room} — peer-to-peer multiplayer ready. Share this code.`;
-  }catch(error){console.error(error);status.textContent='Could not start online multiplayer — solo play still works.';}
-}
+async function connectMultiplayer(){const status=document.querySelector('#roomStatus');try{if(typeof window.io!=='function'){const library=window.loadSocketLibrary?await window.loadSocketLibrary():await import('/socket.io/socket.io.esm.min.js');window.io=library.io;}}catch{status.textContent='Multiplayer server unavailable — solo play still works.';return false;}if(!socket){socket=window.io();socket.on('room',showPlayers);socket.on('connect_error',()=>status.textContent='Multiplayer server is offline — solo play still works.');}return true;}
+async function connectPeerRoom(){const status=document.querySelector('#roomStatus');status.textContent=`Connecting to room ${room}…`;try{const library=window.loadPeerLibrary?await window.loadPeerLibrary():await import('https://esm.run/trystero@0.25.0');if(peerRoom)peerRoom.leave();peerPlayers.clear();peerPlayers.set('you',{id:'you',name:playerName,board,score});peerRoom=library.joinRoom({appId:'julianattemptscoding-tetris-online-v1'},room);const stateAction=peerRoom.makeAction('board-state');stateAction.onMessage=(data,{peerId})=>{if(data&&Array.isArray(data.board)){peerPlayers.set(peerId,{id:peerId,name:String(data.name||'Player').slice(0,16),board:data.board,score:Number(data.score)||0});showPlayers([...peerPlayers.values()]);}};peerRoom.onPeerJoin=peerId=>stateAction.send({name:playerName,board,score},{target:peerId});peerRoom.onPeerLeave=peerId=>{peerPlayers.delete(peerId);showPlayers([...peerPlayers.values()]);};sendPeerState=data=>{peerPlayers.set('you',{id:'you',...data});showPlayers([...peerPlayers.values()]);stateAction.send(data);};showPlayers([...peerPlayers.values()]);status.textContent=`Room ${room} — peer-to-peer multiplayer ready. Share this code.`;}catch(error){console.error(error);status.textContent='Could not start online multiplayer — solo play still works.';}}
 document.querySelector('#join').onclick=async()=>{room=document.querySelector('#room').value.toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,8)||'TETRIS';playerName=document.querySelector('#name').value||'Player';const hosted=location.hostname.endsWith('github.io')||location.protocol==='file:';if(hosted){await connectPeerRoom();return;}if(!await connectMultiplayer())return;socket.emit('join',{room,name:playerName});document.querySelector('#roomStatus').textContent=`Room ${room} — share this code with friends.`;};
-function mini(p){const c=document.createElement('canvas'),x=c.getContext('2d');c.className='mini';c.width=80;c.height=160;x.scale(8,8);x.fillStyle='#020817';x.fillRect(0,0,10,20);if(p.board)drawMatrix(p.board,{x:0,y:0},x);return c;}
-function showPlayers(players){const host=document.querySelector('#players');host.replaceChildren(...players.map(p=>{const d=document.createElement('div');d.className='player';d.textContent=`${p.name} — ${p.score}`;d.append(mini(p));return d;}));}
+function mini(player){const canvas=document.createElement('canvas'),context=canvas.getContext('2d');canvas.className='mini';canvas.width=80;canvas.height=160;context.scale(8,8);context.fillStyle='#020817';context.fillRect(0,0,10,20);if(player.board)drawMatrix(player.board,{x:0,y:0},context);return canvas;}
+function showPlayers(players){const host=document.querySelector('#players');host.replaceChildren(...players.map(player=>{const element=document.createElement('div');element.className='player';element.textContent=`${player.name} — ${player.score}`;element.append(mini(player));return element;}));}
+window.__tetrisTest={snapshot:()=>({board:board.map(row=>[...row]),piece:piece&&{x:piece.x,y:piece.y,rotation:piece.rotation,type:piece.type},score,lines,level,running,paused,placedCount,gravityFrames,dasFrames,entryDelay}),frameStep,rules:{gravity:[...GRAVITY],entryDelayFor}};
 initialize();requestAnimationFrame(tick);
