@@ -4,11 +4,11 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { JSDOM } = require('jsdom');
 
-function loadGame() {
+function loadGame(url = 'https://julianattemptscoding.github.io/tetris-online/') {
   const root = path.join(__dirname, '..');
   const html = fs.readFileSync(path.join(root, 'public', 'index.html'), 'utf8');
   const game = fs.readFileSync(path.join(root, 'public', 'game.js'), 'utf8');
-  const dom = new JSDOM(html, { url: 'https://julianattemptscoding.github.io/tetris-online/', runScripts: 'outside-only' });
+  const dom = new JSDOM(html, { url, runScripts: 'outside-only' });
   const { window } = dom;
   window.HTMLCanvasElement.prototype.getContext = () => ({ scale() {}, fillRect() {}, fillStyle: '' });
   window.requestAnimationFrame = callback => { window.nextFrame = callback; return 1; };
@@ -48,9 +48,24 @@ test('key settings save and reset', () => {
 });
 
 test('solo mode remains usable when Socket.IO is unavailable', () => {
-  const window = loadGame();
+  const window = loadGame('http://localhost:3000/');
   window.document.querySelector('#join').click();
   assert.match(window.document.querySelector('#roomStatus').textContent, /unavailable/);
   window.document.querySelector('#start').click();
   assert.equal(window.document.querySelector('#score').textContent, '000000');
+});
+
+test('hosted game creates a free peer-to-peer room', async () => {
+  const window = loadGame();
+  let sent;
+  const action = { send(data) { sent = data; }, onMessage: null };
+  window.loadPeerLibrary = async () => ({ joinRoom: () => ({ makeAction: () => action, leave() {} }) });
+  window.document.querySelector('#name').value = 'Tester';
+  window.document.querySelector('#room').value = 'QA123';
+  window.document.querySelector('#join').click();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.match(window.document.querySelector('#roomStatus').textContent, /peer-to-peer multiplayer ready/);
+  assert.match(window.document.querySelector('#players').textContent, /Tester/);
+  assert.equal(typeof action.onMessage, 'function');
+  assert.equal(sent, undefined);
 });
