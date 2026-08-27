@@ -19,6 +19,9 @@ function loadGame(url = 'https://julianattemptscoding.github.io/tetris-online/')
 test('game initializes without a multiplayer server', () => {
   const window = loadGame();
   assert.equal(window.document.querySelector('#pause').textContent, 'PAUSE');
+  assert.equal(window.document.querySelector('#pause').disabled, true);
+  assert.equal(window.document.querySelector('#start').textContent, 'START');
+  assert.equal(window.document.querySelector('#gameStatus').textContent, 'PRESS START');
   assert.equal(window.document.querySelector('#score').textContent, '000000');
   assert.equal(typeof window.nextFrame, 'function');
 });
@@ -26,8 +29,13 @@ test('game initializes without a multiplayer server', () => {
 test('pause, resume, and restart controls work', () => {
   const window = loadGame();
   const pause = window.document.querySelector('#pause');
+  window.document.querySelector('#start').click();
+  assert.equal(window.document.querySelector('#start').textContent, 'RESTART');
+  assert.equal(pause.disabled, false);
+  assert.equal(window.document.querySelector('#gameStatus').classList.contains('hidden'), true);
   pause.click();
   assert.equal(pause.textContent, 'RESUME');
+  assert.equal(window.document.querySelector('#gameStatus').textContent, 'PAUSED');
   assert.equal(pause.getAttribute('aria-pressed'), 'true');
   pause.click();
   assert.equal(pause.textContent, 'PAUSE');
@@ -53,6 +61,7 @@ test('solo mode remains usable when Socket.IO is unavailable', () => {
   assert.match(window.document.querySelector('#roomStatus').textContent, /unavailable/);
   window.document.querySelector('#start').click();
   assert.equal(window.document.querySelector('#score').textContent, '000000');
+  assert.equal(window.document.querySelector('#start').textContent, 'RESTART');
 });
 
 test('hosted game creates a free peer-to-peer room', async () => {
