@@ -16,14 +16,20 @@ function draw(){ctx.fillStyle='#020817';ctx.fillRect(0,0,COLS,ROWS);drawMatrix(b
 function merge(){piece.m.forEach((r,y)=>r.forEach((v,x)=>{if(v)board[y+piece.y][x+piece.x]=v;}));let n=0;board=board.filter(r=>{if(r.every(Boolean)){n++;return false}return true});while(board.length<ROWS)board.unshift(Array(COLS).fill(0));if(n){lines+=n;score+=[0,100,300,500,800][n];}piece=next;piece.x=3;piece.y=0;next=newPiece();if(collide(piece))running=false;ui();}
 function down(){if(!running||paused)return;if(!collide(piece,0,1))piece.y++;else merge();drop=0;}
 function rotate(){const m=piece.m[0].map((_,i)=>piece.m.map(r=>r[i]).reverse());if(!collide(piece,0,0,m))piece.m=m;}
-function ui(){document.querySelector('#score').textContent=String(score).padStart(6,'0');document.querySelector('#lines').textContent=String(lines).padStart(2,'0');document.querySelector('#pause').textContent=paused?'RESUME':'PAUSE';}
+function ui(){document.querySelector('#score').textContent=String(score).padStart(6,'0');document.querySelector('#lines').textContent=String(lines).padStart(2,'0');const pauseButton=document.querySelector('#pause');pauseButton.textContent=paused?'RESUME':'PAUSE';pauseButton.setAttribute('aria-pressed',String(paused));}
 function tick(t){const delta=t-last;last=t;if(running&&!paused){drop+=delta;if(drop>Math.max(120,800-lines*4))down();}draw();if(socket&&room)socket.emit('state',{board,score});requestAnimationFrame(tick)}
 document.addEventListener('keydown',e=>{const action=Object.entries(keys).find(([,key])=>key===e.key)?.[0];if(action)e.preventDefault();if(!running||!action)return;if(action==='left'&&!collide(piece,-1))piece.x--;if(action==='right'&&!collide(piece,1))piece.x++;if(action==='down')down();if(action==='rotate')rotate();if(action==='hardDrop'){while(!collide(piece,0,1))piece.y++;down();}});
 document.querySelector('#start').onclick=reset;document.querySelector('#pause').onclick=()=>{if(running){paused=!paused;ui();}};
 document.querySelector('#settings').onclick=()=>document.querySelector('#settingsPanel').classList.toggle('hidden');
 document.querySelectorAll('#bindings input').forEach(input=>input.addEventListener('keydown',e=>{e.preventDefault();e.stopPropagation();if(['Tab','Shift','Control','Alt','Meta'].includes(e.key))return;keys[input.dataset.action]=e.key;saveKeys();input.blur();}));
 document.querySelector('#resetKeys').onclick=()=>{keys={...defaults};saveKeys();};paintBindings();
-document.querySelector('#join').onclick=()=>{room=document.querySelector('#room').value.toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,8)||'TETRIS';const name=document.querySelector('#name').value||'Player';socket??=io();socket.emit('join',{room,name});document.querySelector('#roomStatus').textContent=`Room ${room} — share this code with friends.`;};
+function connectMultiplayer(){
+  const status=document.querySelector('#roomStatus');
+  if(typeof window.io!=='function'){status.textContent='Multiplayer server unavailable — solo play still works.';return false;}
+  if(!socket){socket=window.io();socket.on('room',showPlayers);socket.on('connect_error',()=>status.textContent='Multiplayer server is offline — solo play still works.');}
+  return true;
+}
+document.querySelector('#join').onclick=()=>{room=document.querySelector('#room').value.toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,8)||'TETRIS';const name=document.querySelector('#name').value||'Player';if(!connectMultiplayer())return;socket.emit('join',{room,name});document.querySelector('#roomStatus').textContent=`Room ${room} — share this code with friends.`;};
 function mini(p){const c=document.createElement('canvas'),x=c.getContext('2d');c.className='mini';c.width=80;c.height=160;x.scale(8,8);x.fillStyle='#020817';x.fillRect(0,0,10,20);if(p.board)drawMatrix(p.board,{x:0,y:0},x);return c;}
-socket??=io();socket.on('room',players=>{const host=document.querySelector('#players');host.replaceChildren(...players.map(p=>{const d=document.createElement('div');d.className='player';d.textContent=`${p.name} — ${p.score}`;d.append(mini(p));return d;}));});
+function showPlayers(players){const host=document.querySelector('#players');host.replaceChildren(...players.map(p=>{const d=document.createElement('div');d.className='player';d.textContent=`${p.name} — ${p.score}`;d.append(mini(p));return d;}));}
 reset();requestAnimationFrame(tick);
