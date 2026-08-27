@@ -15,8 +15,15 @@ Open `http://localhost:3000`. On the same Wi-Fi, share `http://YOUR-COMPUTER-IP:
 
 Arrow keys move/soft-drop, `Up` or `X` rotates, and `Space` hard-drops. Use **Start / Restart** to start a new game.
 
-## Share online
+## Put it online
 
-Deploy this repository as a normal Node web service (the host runs `npm start` and supplies `PORT`). The client and real-time room server are intentionally in one application, so no separate backend URL needs configuring.
+The app needs a **Node web service** because multiplayer rooms use Socket.IO; GitHub Pages cannot run that server.
+
+1. Sign in to [Render](https://render.com/) and choose **New → Blueprint**.
+2. Connect the `JulianAttemptsCoding/tetris-online` repository and approve the `render.yaml` blueprint.
+3. Render will build and publish it. Its generated `https://...onrender.com` address is immediately shareable and supports multiplayer.
+4. For your own `.io` address, buy a domain such as `your-name-tetris.io` from a registrar, then add it under the Render service's **Custom Domains** screen. Render shows the exact DNS record to add at the registrar.
+
+`Dockerfile` and `Procfile` are included as alternatives for Railway, Fly.io, or other Node/Docker hosts. The client and room server are intentionally one application, so no separate backend URL needs configuring.
 
 This project uses original browser code and does not include Nintendo assets or ROMs.

@@ -19,7 +19,9 @@ function broadcast(roomId) {
 io.on('connection', (socket) => {
   socket.on('join', ({ room, name }) => {
     const id = clean(room) || 'TETRIS';
-    socket.leave([...socket.rooms].filter((r) => r !== socket.id));
+    for (const previousRoom of socket.rooms) {
+      if (previousRoom !== socket.id) socket.leave(previousRoom);
+    }
     if (!rooms.has(id)) rooms.set(id, { players: new Map() });
     const game = rooms.get(id);
     game.players.set(socket.id, { id: socket.id, name: String(name || 'Player').slice(0, 16), board: null, score: 0 });
