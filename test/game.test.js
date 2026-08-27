@@ -10,7 +10,11 @@ function loadGame(url = 'https://julianattemptscoding.github.io/tetris-online/')
   const game = fs.readFileSync(path.join(root, 'public', 'game.js'), 'utf8');
   const dom = new JSDOM(html, { url, runScripts: 'outside-only' });
   const { window } = dom;
-  window.HTMLCanvasElement.prototype.getContext = () => ({ scale() {}, fillRect() {}, fillStyle: '' });
+  window.canvasCalls = [];
+  window.HTMLCanvasElement.prototype.getContext = function () {
+    let fillStyle = '';
+    return { scale() {}, get fillStyle(){return fillStyle;}, set fillStyle(value){fillStyle=value;}, fillRect(x,y,w,h){window.canvasCalls.push({canvas:this.canvas,fillStyle,x,y,w,h});}, canvas:this };
+  };
   window.requestAnimationFrame = callback => { window.nextFrame = callback; return 1; };
   window.eval(game);
   return window;
@@ -45,6 +49,22 @@ test('pause, resume, and restart controls work', () => {
   assert.equal(pause.getAttribute('aria-pressed'), 'false');
 });
 
+test('start renders a falling piece and keyboard moves it', () => {
+  const window = loadGame();
+  window.document.querySelector('#start').click();
+  window.canvasCalls.length = 0;
+  window.nextFrame(window.performance.now() + 10);
+  const pieceColors = new Set(['#30c8ff','#3f51ff','#ff9d2e','#ffe23d','#51d66d','#bd5cff','#ff4e66']);
+  const firstPiece = window.canvasCalls.filter(call => pieceColors.has(call.fillStyle) && call.w === 1);
+  assert.ok(firstPiece.length >= 4, 'piece should render after Start');
+  const firstY = Math.min(...firstPiece.map(call => call.y));
+  window.canvasCalls.length = 0;
+  window.document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+  window.nextFrame(window.performance.now() + 20);
+  const movedPiece = window.canvasCalls.filter(call => pieceColors.has(call.fillStyle) && call.w === 1);
+  assert.ok(Math.min(...movedPiece.map(call => call.y)) > firstY, 'piece should move after Start');
+});
+
 test('key settings save and reset', () => {
   const window = loadGame();
   const left = window.document.querySelector('[data-action="left"]');
@@ -55,9 +75,11 @@ test('key settings save and reset', () => {
   assert.equal(left.value, 'ArrowLeft');
 });
 
-test('solo mode remains usable when Socket.IO is unavailable', () => {
+test('solo mode remains usable when Socket.IO is unavailable', async () => {
   const window = loadGame('http://localhost:3000/');
+  window.loadSocketLibrary = async () => { throw new Error('offline'); };
   window.document.querySelector('#join').click();
+  await new Promise(resolve => setTimeout(resolve, 0));
   assert.match(window.document.querySelector('#roomStatus').textContent, /unavailable/);
   window.document.querySelector('#start').click();
   assert.equal(window.document.querySelector('#score').textContent, '000000');

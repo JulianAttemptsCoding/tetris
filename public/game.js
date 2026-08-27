@@ -15,7 +15,7 @@ function reset(){board=empty();piece=newPiece();next=newPiece();score=0;lines=0;
 function initialize(){board=empty();piece=newPiece();next=newPiece();score=0;lines=0;running=false;paused=false;gameMessage='PRESS START';ui();}
 function collide(p,dx=0,dy=0,m=p.m){return m.some((r,y)=>r.some((v,x)=>v&&(board[y+p.y+dy]?.[x+p.x+dx]??1)));}
 function drawMatrix(m,off,c=ctx){m.forEach((r,y)=>r.forEach((v,x)=>{if(v){c.fillStyle=colors[v];c.fillRect(x+off.x,y+off.y,1,1);c.fillStyle='rgba(255,255,255,.25)';c.fillRect(x+off.x,y+off.y,.13,1);}}));}
-function draw(){ctx.fillStyle='#020817';ctx.fillRect(0,0,COLS,ROWS);drawMatrix(board,{x:0,y:0});if(running)drawMatrix(piece,{x:piece.x,y:piece.y});nextCtx.fillStyle='#020817';nextCtx.fillRect(0,0,6,5);drawMatrix(next.m,{x:1,y:1},nextCtx);}
+function draw(){ctx.fillStyle='#020817';ctx.fillRect(0,0,COLS,ROWS);drawMatrix(board,{x:0,y:0});if(running)drawMatrix(piece.m,{x:piece.x,y:piece.y});nextCtx.fillStyle='#020817';nextCtx.fillRect(0,0,6,5);drawMatrix(next.m,{x:1,y:1},nextCtx);}
 function merge(){piece.m.forEach((r,y)=>r.forEach((v,x)=>{if(v)board[y+piece.y][x+piece.x]=v;}));let n=0;board=board.filter(r=>{if(r.every(Boolean)){n++;return false}return true});while(board.length<ROWS)board.unshift(Array(COLS).fill(0));if(n){lines+=n;score+=[0,100,300,500,800][n];}piece=next;piece.x=3;piece.y=0;next=newPiece();if(collide(piece)){running=false;gameMessage='GAME OVER';}ui();}
 function down(){if(!running||paused)return;if(!collide(piece,0,1))piece.y++;else merge();drop=0;}
 function rotate(){const m=piece.m[0].map((_,i)=>piece.m.map(r=>r[i]).reverse());if(!collide(piece,0,0,m))piece.m=m;}
@@ -26,9 +26,11 @@ document.querySelector('#start').addEventListener('click',reset);document.queryS
 document.querySelector('#settings').onclick=()=>document.querySelector('#settingsPanel').classList.toggle('hidden');
 document.querySelectorAll('#bindings input').forEach(input=>input.addEventListener('keydown',e=>{e.preventDefault();e.stopPropagation();if(['Tab','Shift','Control','Alt','Meta'].includes(e.key))return;keys[input.dataset.action]=e.key;saveKeys();input.blur();}));
 document.querySelector('#resetKeys').onclick=()=>{keys={...defaults};saveKeys();};paintBindings();
-function connectMultiplayer(){
+async function connectMultiplayer(){
   const status=document.querySelector('#roomStatus');
-  if(typeof window.io!=='function'){status.textContent='Multiplayer server unavailable — solo play still works.';return false;}
+  try{
+    if(typeof window.io!=='function'){const library=window.loadSocketLibrary?await window.loadSocketLibrary():await import('/socket.io/socket.io.esm.min.js');window.io=library.io;}
+  }catch{status.textContent='Multiplayer server unavailable — solo play still works.';return false;}
   if(!socket){socket=window.io();socket.on('room',showPlayers);socket.on('connect_error',()=>status.textContent='Multiplayer server is offline — solo play still works.');}
   return true;
 }
@@ -50,7 +52,7 @@ async function connectPeerRoom(){
     status.textContent=`Room ${room} — peer-to-peer multiplayer ready. Share this code.`;
   }catch(error){console.error(error);status.textContent='Could not start online multiplayer — solo play still works.';}
 }
-document.querySelector('#join').onclick=async()=>{room=document.querySelector('#room').value.toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,8)||'TETRIS';playerName=document.querySelector('#name').value||'Player';const hosted=location.hostname.endsWith('github.io')||location.protocol==='file:';if(hosted){await connectPeerRoom();return;}if(!connectMultiplayer())return;socket.emit('join',{room,name:playerName});document.querySelector('#roomStatus').textContent=`Room ${room} — share this code with friends.`;};
+document.querySelector('#join').onclick=async()=>{room=document.querySelector('#room').value.toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,8)||'TETRIS';playerName=document.querySelector('#name').value||'Player';const hosted=location.hostname.endsWith('github.io')||location.protocol==='file:';if(hosted){await connectPeerRoom();return;}if(!await connectMultiplayer())return;socket.emit('join',{room,name:playerName});document.querySelector('#roomStatus').textContent=`Room ${room} — share this code with friends.`;};
 function mini(p){const c=document.createElement('canvas'),x=c.getContext('2d');c.className='mini';c.width=80;c.height=160;x.scale(8,8);x.fillStyle='#020817';x.fillRect(0,0,10,20);if(p.board)drawMatrix(p.board,{x:0,y:0},x);return c;}
 function showPlayers(players){const host=document.querySelector('#players');host.replaceChildren(...players.map(p=>{const d=document.createElement('div');d.className='player';d.textContent=`${p.name} — ${p.score}`;d.append(mini(p));return d;}));}
 initialize();requestAnimationFrame(tick);
